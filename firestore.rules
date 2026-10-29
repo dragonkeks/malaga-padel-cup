@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // HIER_ADMIN_UID ersetzen! Es muss exakt derselbe Wert wie in firebase-config.js sein.
     function isAdmin() {
-      return request.auth != null && request.auth.uid == 'HIER_ADMIN_UID';
+      return request.auth != null && request.auth.uid == 'RSyNpHZL6icGzo8cOdgXi8mHWBi2';
     }
     function isPlayer(id) {
       return request.auth != null &&
