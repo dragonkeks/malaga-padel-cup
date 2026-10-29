@@ -1,157 +1,84 @@
-# Málaga Padel Cup – genaue Einrichtungsanleitung
+# Málaga Padel Cup – Anleitung für die zweite Version
 
-Die App ist eine mobile Web-App (keine Installation aus dem App Store nötig). Du kannst sie kostenlos auf GitHub Pages hosten. Zur Synchronisierung zwischen Handys brauchst du ein Firebase-Projekt mit **Cloud Firestore** und **Firebase Authentication**. Diese Anleitung ist für Einsteiger und Mac-Nutzer geschrieben.
+Die App ist eine mobile Website für GitHub Pages. Live-Daten laufen über **Firebase Cloud Firestore** und das Login über **Firebase Authentication**. Für die App brauchst du keine Serverprogrammierung, keine Node-Installation und keine kostenpflichtige Hosting-Plattform.
 
-## 1. Zuerst die Demo ansehen
+> **Bereits die erste Version eingerichtet?** Lies **[UPDATE_VON_VERSION_1.md](UPDATE_VON_VERSION_1.md)**. Bewahre vor allem deine **bisherige `firebase-config.js`** auf. Erstelle **kein** neues Firebase-Projekt. Neue Version hochladen und neue Firestore-Regeln veröffentlichen reicht.
 
-Solange du in `firebase-config.js` keine Firebase-Werte eingetragen hast, zeigt die App eine **lokale Demo** mit zwölf Beispielspielern und zwei Turnieren. Du kannst im Demo-Modus unter „Admin“ sämtliche Funktionen ausprobieren, neue Turniere anlegen und Ergebnisse eintragen. Änderungen bleiben ausschließlich im **aktuellen Browser** (localStorage): Andere Spieler sehen sie nicht. Die Demo ist nicht der Live-Betrieb.
+## A. Neuinstallation – GitHub
 
-Am einfachsten: Lade die Dateien nach Schritt 5 zu GitHub hoch. Deine GitHub-Pages-Seite startet zunächst als Demo. Du kannst sie danach auf Firebase umstellen.
+1. Ein neues Repository bei [GitHub](https://github.com) erstellen, z. B. `malaga-padel-cup`.
+2. Alle App-Dateien in das **Hauptverzeichnis** des Repositorys hochladen. `index.html` muss direkt dort liegen.
+3. Unter **Settings → Pages → Deploy from a branch** den Branch `main` und `/(root)` auswählen und speichern.
+4. Die veröffentlichte App liegt normalerweise unter `https://DEINNAME.github.io/malaga-padel-cup/`. Ohne Firebase-Konfiguration wird die Demo angezeigt.
 
-Wichtig: Lade die **entpackten Dateien** hoch, nicht nur die ZIP-Datei.
+## B. Firebase – Cloud Firestore
 
-## 2. Firebase-Projekt anlegen
+1. Unter <https://console.firebase.google.com/> dein Firebase-Projekt wählen bzw. erstellen.
+2. **Firestore Database** öffnen – **nicht Realtime Database!** Falls nötig „Datenbank erstellen“ → Standard-Edition, `(default)`, europäische Region und Produktionsmodus auswählen.
+3. **Authentication → Anmeldemethode** öffnen und **E-Mail/Passwort** einschalten. Auch die namenbasierte Registrierung der Spieler nutzt intern diese Firebase-Methode.
+4. In **Authentication → Nutzer** ein Adminkonto mit einer echten E-Mail-Adresse und starkem Passwort erstellen. Dessen **User UID** kopieren.
+5. In **Projekteinstellungen → Deine Apps** eine Web-App registrieren. Aus der Firebase-Konfiguration die Felder `apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId` ablesen.
 
-1. Öffne <https://console.firebase.google.com/> und melde dich mit deinem Google-Konto an.
-2. Klicke auf **Projekt hinzufügen** und nenne es beispielsweise `malaga-padel-cup` (der genaue Projektname darf anders sein).
-3. Google Analytics ist für diese App nicht erforderlich. Du kannst es deaktivieren.
-4. Öffne das neue Projekt. Wähle im Projektmenü **Projektübersicht → Projekteinstellungen** (Zahnrad).
-5. Bei **Deine Apps** klicke auf das Websymbol `</>` und registriere eine Web-App, z. B. `Padel Turnier`.
-6. Du erhältst die **Firebase-Konfiguration**, etwa:
+## C. App mit Firebase verknüpfen
 
-   ```js
-   const firebaseConfig = {
-     apiKey: "AIza...",
-     authDomain: "mein-projekt.firebaseapp.com",
-     projectId: "mein-projekt",
-     storageBucket: "mein-projekt.firebasestorage.app",
-     messagingSenderId: "123...",
-     appId: "1:123:web:..."
-   };
-   ```
+1. In `firebase-config.js` die Platzhalter mit den Werten deiner registrierten Firebase-Web-App ersetzen.
+2. In derselben Datei beim Export `ADMIN_UID` die echte **User UID** deines Adminkontos eintragen. Das Admin-Passwort kommt **nicht** in den Code.
+3. In `firestore.rules` den Text `'HIER_ADMIN_UID'` durch **dieselbe UID** ersetzen.
+4. Unter **Firebase → Firestore Database → Regeln** den **vollständigen** Inhalt der angepassten `firestore.rules` einfügen und auf **Veröffentlichen** klicken. Nicht bei Realtime Database einfügen.
+5. Unter **Firebase → Authentication → Einstellungen → Autorisierte Domains** die GitHub-Pages-Domain eintragen, also z. B. `tigraef.github.io`, **ohne** `https://`, `github.com` oder den Repository-Pfad.
+6. Neue bzw. geänderte Dateien über GitHub hochladen und committen.
+7. In der Live-App mit dem Admin-Login (echte E-Mail + Passwort) anmelden.
 
-   Lass das Fenster mit diesen Werten geöffnet. Wichtig: Du brauchst **keinen Firebase Hosting-Dienst**, weil GitHub Pages das Hosting übernimmt.
+Die sechs Firebase-Konfigurationswerte und die Admin-UID sind keine Passwörter. Zugriff schützen die Regeln in Firestore. Niemals dein Passwort oder einen Firebase-Service-Account-Schlüssel ins GitHub-Repository kopieren.
 
-## 3. Datenbank einschalten und Zugriffsregeln setzen
+## D. Admin: Spieler und Turniere erstellen
 
-1. Öffne links **Build → Firestore Database** und klicke **Datenbank erstellen**.
-2. Wähle den normalen Firestore-Datenbankmodus (Standard Edition / Native Mode, sofern gefragt), eine europäische Region und **Produktionsmodus**.
-3. Unter **Firestore Database → Regeln (Rules)** wird ein Regeleditor angezeigt.
-4. Öffne aus diesem Projekt die Datei `firestore.rules`. Kopiere **den gesamten Inhalt** in den Regeleditor. **Noch nicht veröffentlichen**: Der Text `HIER_ADMIN_UID` muss zunächst durch deine echte Admin-UID ersetzt werden (siehe Schritt 4).
-5. Speichere bzw. veröffentliche die Regeln nach dem Ersetzen der UID.
+1. Unter **Admin → Spieler & Zugänge** zunächst die Spielernamen anlegen. Maximal 12 Teilnehmer je Turnier; die gesamte Spielerliste darf länger sein.
+2. Unter **Admin → Turnier erstellen** den Modus auswählen:
+   - **Zwei Gruppen mit KO- und Platzierungsspielen:** 8 oder 12 Personen.
+   - **Jeder gegen jeden mit Platzierungsspielen:** 4, 6, 8, 10 oder 12 Personen.
+   - **Americano:** 4, 8 oder 12 Personen. Jeder wird genau einmal mit jedem anderen Doppelpartner eingeteilt.
+   - **Mexicano:** 4, 8 oder 12 Personen; Rundenzahl wählbar. Ab Runde 2 setzt die aktuelle Einzelrangliste die Gegner und Partner zusammen: 1+4 gegen 2+3, 5+8 gegen 6+7 usw.
+3. Spielformat auswählen: **Best of 3 Sätze**, **8 Bälle** oder **24 Bälle**.
+4. Für Teamturniere „**Teams automatisch zufällig mischen**“ deaktivieren, um jedes Zweierteam einschließlich Teamnamen selbst zuzuordnen. Jeder Teilnehmer muss genau einmal vorkommen.
+5. Die Schalter **Spieler dürfen eigene Matches terminieren** und **Spieler dürfen Ergebnisse ihrer offenen Matches eintragen** unabhängig voneinander setzen.
+6. Platzierungsbonus einstellen, zum Beispiel 100 Punkte für Platz 1 und 30 Punkte für den letzten Platz. Das beeinflusst erst die Gesamtwertung nach dem Turnier.
+7. Turnier speichern. Die App erzeugt die erste Phase automatisch.
+8. Bei Gruppen-/Liga- und Mexicano-Turnieren nach vollständigem Abschluss der vorigen Runde unter **Admin → Turniere → Nächste Phase** weitergehen. Im Gruppenmodus folgen Halbfinals und Finale/weitere Platzierungsspiele.
 
-**Sicherheit:** Die Regeln erlauben allen den Lesezugriff auf Spielerlisten, Turnierdaten und Ergebnisse. Erstellen, Löschen und Korrigieren darf nur die Firebase-Admin-UID. Wenn Selbstterminierung aktiviert ist, dürfen angemeldete, einem Turnierspieler zugeordnete Konten **ausschließlich** die Zeit und den Court ihrer eigenen noch offenen Matches ändern – keine Ergebnisse. Die Firebase-Konfigurationswerte und die UID sind nicht geheim; die Firestore-Regeln sind die eigentliche Zugriffskontrolle. **Nie private Passwörter oder Firebase-Service-Account-Schlüssel in GitHub ablegen.**
+## E. Freie Spiele, Termine, Ergebnisse
 
-## 4. Dein Adminkonto erstellen
+Unter **Admin → Freies Spiel** können unabhängig von Turnieren Doppel-Matches mit vier unterschiedlichen Spielern angelegt werden. Format, Zeitpunkt, Court und Freigaben sind einstellbar. Jede abgeschlossene Partie zählt für die Gesamtwertung mit 2/1/0 Matchpunkten, aber ohne Turnierbonus.
 
-1. Öffne links **Build → Authentication** und klicke **Jetzt starten**.
-2. Gehe zu **Sign-in method / Anmeldemethode**.
-3. Aktiviere **E-Mail/Passwort** (Email/Password). Die Variante „E-Mail-Link“ ist nicht nötig.
-4. Unter **Users / Nutzer** klicke **Nutzer hinzufügen / Add user**.
-5. Trage deine E-Mail-Adresse und ein starkes Passwort ein. Das Passwort nirgends in den Code schreiben!
-6. Der neue Nutzer erscheint in einer Liste. Kopiere den langen Wert in der Spalte **User UID**. Beispiel: `hjw83...` (nur als Beispiel).
-7. Öffne auf deinem Mac die Datei `firebase-config.js` mit TextEdit im reinen Textmodus oder Visual Studio Code.
-8. Ersetze in `firebaseConfig` die sechs Platzhalter durch die echten Firebase-Werte aus Schritt 2. **Anführungszeichen, Kommas und geschweifte Klammern beibehalten.**
-9. Ersetze in derselben Datei `HIER_ADMIN_UID` durch die eben kopierte **User UID**. Nicht die E-Mail-Adresse eintragen.
-10. Öffne zusätzlich die Datei `firestore.rules` und ersetze **auch dort** `HIER_ADMIN_UID` durch exakt dieselbe UID.
-11. Speichere beide Dateien. Kopiere die geänderten Regeln in der Firebase-Konsole unter **Firestore Database → Regeln** und klicke **Veröffentlichen / Publish**.
+Für automatisch geplante Turniere unter **Spielplan → Zeitplan erstellen** Startzeit, Slotdauer und Courts festlegen. Bestehende Match-Termine werden auf Überschneidung geprüft. Spieler dürfen ihre eigenen Termine ändern, wenn das Match noch offen, der entsprechende Schalter gesetzt und ihr Spielerprofil freigeschaltet ist. Gleichzeitige Änderungen können trotzdem Kollisionen verursachen, daher Spielplan kontrollieren.
 
-So sieht das in `firebase-config.js` ungefähr aus:
+Ergebnisse können über die Matchkarte eingetragen werden. Sieg zählt 2 Matchpunkte für jeden Spieler des Siegerteams; Unentschieden 1 Punkt pro Spieler; Niederlage 0. Im Modus Best-of-3 werden Sätze gewertet, für 8 oder 24 Bälle die Ballpunkte. KO-/Platzierungsspiele müssen bei Gleichstand einen Golden Point erhalten.
 
-```js
-export const ADMIN_UID = 'DEINE_ECHTE_USER_UID';
-```
+## F. Spielerregistrierung ohne eigene E-Mail
 
-Die HTML-Dateien benötigen keinen npm-Befehl und keinen Programmier-Editor. Wichtig ist nur, dass die Datei `.js` bleibt und kein `.txt` angehängt wird.
+1. Ein Spieler öffnet die App und wählt **Anmelden**.
+2. Er wählt **seinen Namen aus der von dir angelegten Liste**, vergibt ein Passwort (mindestens 6 Zeichen) und tippt **Registrieren**.
+3. Dabei wird ein Firebase-Authentication-Konto mit einer automatisch generierten technischen E-Mail-Adresse erstellt. **Keine echte Spieler-E-Mail notwendig.**
+4. Du kontrollierst unter **Admin → Spieler & Zugänge → Registrierungsanfragen** die angezeigte Zuordnung. **Nur freigeben, wenn du sicher weißt, wer sich registriert hat.** Ein öffentlich sichtbarer Name beweist keine Identität.
+5. Nach Freigabe kann sich die Person mit Name und Passwort anmelden und unter **Mein Bereich** ihre offenen Spiele, abgeschlossenen Matches, Matchpunkte und Turnierplatzierungen ansehen. Freigegebene offene Matches haben Schaltflächen „Termin“ oder „Ergebnis melden“.
 
-## 5. GitHub-Pages-Website veröffentlichen
+**Passwort vergessen?** Bei Konten ohne echte E-Mail gibt es keine automatische E-Mail-Wiederherstellung. Die Turnierleitung muss die alte UID-Verknüpfung beim Spieler lösen und das zugehörige Firebase-Authentication-Konto in der Firebase Console löschen bzw. verwalten. Danach erneut registrieren.
 
-1. Öffne <https://github.com/> und melde dich an.
-2. Klicke rechts oben auf **+ → New repository**.
-3. Repository-Name beispielsweise `malaga-padel-cup`.
-4. Wähle **Public** (die Website wird ohnehin öffentlich erreichbar sein). Klicke **Create repository**.
-5. Entpacke das heruntergeladene ZIP auf deinem Mac durch Doppelklick.
-6. Im neuen GitHub-Repository klicke **Add file → Upload files**.
-7. Ziehe aus dem entpackten Ordner **alle Dateien der obersten Ebene** in das Upload-Fenster: `index.html`, `style.css`, `app.js`, `core.mjs`, `firebase-config.js`, `firestore.rules`, `ANLEITUNG.md` sowie bei Bedarf weitere Dateien. Die versteckte `.nojekyll` ist optional. Die Tests musst du nicht hochladen.
-8. Warte, bis alles hochgeladen ist, und klicke unten **Commit changes**.
-9. Oben im GitHub-Repository öffne **Settings → Pages**.
-10. Unter **Build and deployment → Source** wähle **Deploy from a branch**.
-11. Wähle Branch **main** und Ordner **/(root)**, dann **Save**.
-12. Deine Seite lautet üblicherweise:
+Bestehende Spielerkonten aus Version 1, die eine echte E-Mail verwenden, können sich weiterhin über „Admin oder bestehendes Konto mit E-Mail anmelden“ anmelden, sofern ihre UID schon mit dem Spieler verknüpft ist.
 
-    `https://DEIN-GITHUB-NAME.github.io/malaga-padel-cup/`
+## G. Wie die Tabellen funktionieren
 
-    Wenn du einen anderen Repository-Namen gewählt hast, erscheint er stattdessen im Link. Falls deine Website noch nicht erreichbar ist, überprüfe den Veröffentlichungsstatus unter **Actions** oder **Settings → Pages**.
+- **Turniertabellen:** Rangfolge zuerst nach **Matchpunkten** (2 pro Sieg, 1 pro Unentschieden), danach Punktedifferenz, erzielten Bällen/Games und Siegen. Der Liga- bzw. Gruppenstand und die Americano-/Mexicano-Rangliste zeigen außerdem Sp., Siege, Unentschieden, Niederlagen und erzielte/verlorene Bälle/Games.
+- **Gesamtwertung:** Für **jedes** beendete Match bekommt jeder Spieler die 2/1/0 Matchpunkte – auch aus freien Spielen oder aus noch laufenden Turnieren. Dazu kommt für jedes vollständig beendete Turnier ein **Platzierungsbonus**. Bei 100 Punkten für Platz 1 und 30 für den letzten Platz liegt jede dazwischenliegende Platzierung linear dazwischen. Der Teamplatz wird beiden Teammitgliedern gutgeschrieben. Die Gesamtwertung addiert Matchpunkte und Boni.
+- Diese Gesamtwertung belohnt **häufige Teilnahme**, auch an einzelnen Spielen. Wer häufiger spielt, kann mit guten Leistungen mehr Gesamtpunkte erzielen.
+- Die Angaben unter **Tabellen** betreffen jeweils nur das ausgewählte Turnier. Der Filter „Alle Turniere“ ist bewusst entfernt. Die turnierübergreifende Übersicht bleibt im Reiter **Gesamt**.
 
-Die Website wird neu veröffentlicht, wenn du später Dateien im Repository änderst. GitHub-Anleitung: <https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site>.
+## H. Tests und Grenzen
 
-## 6. Firebase für deine GitHub-Seite autorisieren
-
-1. Öffne Firebase-Konsole → **Authentication → Settings / Einstellungen → Authorized domains / Autorisierte Domains**.
-2. Füge **`DEIN-GITHUB-NAME.github.io`** hinzu (ohne `https://`, ohne `/malaga-padel-cup/`). Sonst kann die Anmeldung je nach gewähltem Auth-Verfahren blockiert werden.
-3. Öffne die veröffentlichte App auf deinem Handy oder Mac.
-4. Rechts oben **Anmelden** wählen und mit der Adminkonto-E-Mail und dem Passwort aus Schritt 4 einloggen.
-5. Im Navigationspunkt **Admin** solltest du jetzt Turniere und Spieler verwalten können. Wenn stattdessen „Admin-Anmeldung“ erscheint, prüfe den UID-Eintrag in der Konfigurationsdatei.
-
-### Häufige Probleme
-
-- **DEMO im Kopfbereich:** Die Platzhalter in `firebase-config.js` sind noch nicht alle ersetzt oder die neue Datei ist noch nicht bei GitHub veröffentlicht.
-- **Missing or insufficient permissions / Zugriff verweigert:** Die Firestore-Regeln sind noch nicht veröffentlicht, die Admin-UID ist falsch oder du bist nicht angemeldet.
-- **auth/operation-not-allowed:** E-Mail/Passwort in Authentication aktivieren.
-- **auth/invalid-credential:** Passwort/E-Mail überprüfen.
-- **Weiße Seite:** Browser-Konsole mit Rechtsklick → Untersuchen → Console kontrollieren; oft wurden Anführungszeichen oder Kommas in `firebase-config.js` beschädigt.
-- **Spieler sieht keine Zeitplan-Schaltfläche:** Der Spieler muss angemeldet sein, und seine UID muss im jeweiligen Spielerdatensatz hinterlegt sein. Außerdem muss im Turnier die Selbstterminierung eingeschaltet sein.
-- **GitHub zeigt statt der Website nur eine 404-Seite:** `index.html` muss direkt im Repository-Hauptordner liegen; branch `main` und `/(root)` auswählen.
-
-## 7. Turnier einrichten und während des Events bedienen
-
-1. **Admin → Spieler**: Zuerst alle Spielernamen hinzufügen.
-2. **Admin → Turnier erstellen**: Name, Modus, Punktesystem und 4–12 Teilnehmer wählen.
-3. Bei Teamturnieren **Zufallsmischung** aktivieren oder deaktivieren, um Namen und Zweierteams selbst festzulegen. Du kannst Teamnamen/Spielerzuteilung später über **Admin → Turniere → Bearbeiten** ändern; Spielerzuteilungen sind nach dem ersten eingetragenen Ergebnis gesperrt.
-4. Beim Mexicano eine Rundenanzahl einstellen; bei 8/24 Bällen werden die Bälle je Paarung gezählt.
-5. Turnier anlegen. Die App erzeugt die ersten Paarungen.
-6. **Spielplan → Zeitplan erstellen**: Startzeit, Matchdauer und Courts (z. B. `D6, D7, D8`) einstellen. Die App prüft Terminkollisionen zwischen Spielern und Courts – auch turnierübergreifend. Noch nicht erzeugte KO- oder Mexicano-Runden müssen später separat geplant werden.
-7. Ergebnisse über die Schaltfläche **Ergebnis** an einer Match-Karte eintragen. Der Admin kann sie ändern und zurücksetzen. **Achtung:** Wenn Folgerunden bereits erstellt wurden, werden deren Paarungen nach einer Korrektur von Vorrunden- oder früheren Mexicano-Ergebnissen nicht automatisch neu berechnet. Kontrolliere Folgerunden darum vor dem Weiterkommen sorgfältig.
-8. Bei **2 Gruppen + KO** nach der Vorrunde unter **Admin → Turniere → Nächste Phase** die Halbfinalspiele und gegebenenfalls Platz 5 erzeugen; nach diesen Matches Finale und Platz 3 erzeugen.
-9. Bei **Jeder gegen jeden + Platzierung** nach allen Ligaspielen über **Nächste Phase** die Platzierungsspiele erzeugen (Platz 1 gegen 2, 3 gegen 4 usw.). Bei ungerader Teamanzahl erhält das letzte Team den letzten Platz ohne zusätzliches Platzierungsspiel.
-10. Bei **Mexicano** nach jeder fertigen Runde **Nächste Phase** wählen. Die neuen Paarungen werden aus der Live-Rangliste generiert.
-11. Bei **Americano** werden alle Runden bereits beim Start generiert. Jeder Spieler bekommt jeden anderen Teilnehmer genau einmal als Doppelpartner.
-12. Sobald sämtliche Matches der letzten Turnierphase erfasst wurden, erscheint das Turnier automatisch als **abgeschlossen** und zählt in der **Gesamtwertung**. Gleichzeitig können beliebig viele andere Turniere parallel offen bleiben.
-
-### Spieler dürfen selbst Termine eintragen
-
-1. Bei der Turniererstellung „Spieler dürfen eigene Matches terminieren“ aktivieren (alternativ später unter Turnier bearbeiten).
-2. Jeder teilnehmende Spieler klickt auf **Anmelden → Spielerkonto anlegen**, gibt E-Mail und Passwort ein und öffnet anschließend oben rechts sein Konto.
-3. Dort wird die **Konto-UID** angezeigt. Diese UID teilt der Spieler **dir** mit.
-4. Du öffnest **Admin → Spieler → Bearbeiten** beim zugehörigen Namen und trägst die UID in das Feld **Firebase-Konto-UID** ein.
-5. Danach erscheint bei seinen noch offenen Matches die Schaltfläche **Termin**. Ergebnisse bleiben weiterhin nur für dich editierbar.
-
-Der manuelle UID-Schritt dient als Kontrolle, damit nicht irgendwer fremde Spieltermine verändern kann.
-
-## 8. Wertungslogik genau erklärt
-
-- **Teamturniere:** Die endgültige Platzierung im Teamturnier wird jedem Teammitglied einzeln gutgeschrieben. Vorrundenspiele erzeugen vorläufige Tabellen, aber noch keine Gesamtpunkte.
-- **Americano/Mexicano:** Einzelplatzierungen folgen zunächst der Summe der gewonnenen Ball- bzw. Spielpunkte; danach entscheiden Punktedifferenz und Siege. Bei Best-of-3 werden gewonnene *Games* je Satz für die Einzelrangliste addiert.
-- **Gesamtwertung:** Pro abgeschlossenem Turnier: **30 + 70 × (N − Platz) / (N − 1)** Punkte (1 Dezimalstelle). `N` ist die Zahl der Teams bei Teamturnieren, sonst die Zahl der Einzelspieler. Somit gibt es zwischen 30 und 100 Punkte pro Turnier und Leistung. Mehrere gute Turniere addieren sich, ein einmaliger Sieg kann nicht fünf gute Ergebnisse übertrumpfen. Beispiel bei 6 Teams: 1. Platz 100, 2. Platz 86, 3. Platz 72, 4. Platz 58, 5. Platz 44, 6. Platz 30.
-- **Unentschieden:** Bei 8 oder 24 Bällen sind 4:4 und 12:12 in Vorrunden und Americano/Mexicano möglich. In KO- und Platzierungsspielen ist ein Golden Point nötig, also 5:4 oder 13:12. Beim Satzmodus werden zwei Gewinnsätze erfasst; bei 6:6 entscheidet ein letzter Punkt 7:6.
-- **Zeitplanung:** Die automatische Planung berücksichtigt alle derzeit existierenden Matches. Sie berücksichtigt keine echten Öffnungszeiten deiner Anlage und kann zukünftige KO-Paarungen erst planen, wenn diese erzeugt sind. Eine Terminkollision wird im Browser geprüft; bei gleichzeitigem Bearbeiten durch mehrere Spieler sind seltene Konflikte dennoch möglich. Daher im Zweifel den Plan gemeinsam kontrollieren.
-
-## 9. Datensicherung und Grenzen
-
-- Unter **Admin → Backup (JSON)** kannst du Spieler, Turniere, Matches und Ergebnisse als JSON herunterladen. Bewahre gelegentlich eine Kopie auf. Eine Importfunktion ist in dieser ersten Version noch nicht vorhanden.
-- Die App ist als leichter, gemeinsamer Turniermanager ausgelegt, nicht als professionelles Ligamanagement-System. Es gibt keine automatische Reservierung der echten Courts bei der Anlage, keine Push-Benachrichtigungen und keinen echten Kalenderabgleich.
-- Ohne Internetverbindung können Teilnehmer nicht zuverlässig live synchronisieren.
-- Für Cloud Firestore und Authentication gelten die jeweils aktuellen Firebase-Limits und ggf. Kosten. Für eine kleine Gruppe ist häufig die kostenlose Stufe ausreichend, aber bitte in der Firebase-Konsole die Nutzung prüfen.
-- **Die App ist nicht für geheime Daten gedacht:** Namen, Paarungen und Ergebnisse sind per öffentlichem Link lesbar. Verwende nur Vornamen/Kürzel, wenn du die persönlichen Daten deiner Bekannten möglichst gering halten möchtest.
-
-## Enthaltene Dateien
-
-- `index.html`: Einstiegspunkt der Web-App
-- `style.css`: responsives Design
-- `app.js`: Oberfläche, Live-Daten, Verwaltung und Zeitplanung
-- `core.mjs`: Turnierregeln, Paarungen, Punkte und Tabellen
-- `firebase-config.js`: deine Firebase-Projektkonfiguration und Admin-UID
-- `firestore.rules`: Datenbankregeln, die du in Firebase einfügst
-- `tests/core.test.mjs`: automatische Tests (freiwillig, lokal mit Node.js ausführbar)
-
-Entwickelt als GitHub-Pages-Web-App mit Firebase. Keine npm-Installation erforderlich.
+- Vor dem echten Turnier im Admin-Bereich **Backup (JSON)** herunterladen. Bei neuen Daten später erneut sichern.
+- Die lokalen JavaScript-Tests sind im Ordner `tests` vorhanden. Wenn Node.js installiert ist: `node tests/core.test.mjs`, `node tests/upgrade.test.mjs` und `node tests/render.test.mjs`.
+- Nach dem Update mit **zwei Geräten** testen: Spieler registrieren, vom Admin freigeben, freien Termin ändern und Ergebnis melden; den neuen Tabellenstand auf dem anderen Gerät prüfen.
+- Ein Teilnehmer kann ein offenes Ergebnis melden; eine **Vier-Personen-Bestätigung** gibt es derzeit nicht. Der Admin kann jedes Ergebnis korrigieren oder zurücksetzen.
+- Eine Korrektur nach Erzeugen von Folgerunden baut bestehende KO-/Mexicano-Paarungen nicht automatisch neu auf.
+- Live-Daten erfordern Internet. Namen und Turnierdaten sind für Besucher mit dem Seitenlink öffentlich lesbar; verwende bei Bedarf Kürzel.
+- Bei Firestore-Regelfehlern unbedingt prüfen, dass **Cloud Firestore** und nicht **Realtime Database** geöffnet ist.

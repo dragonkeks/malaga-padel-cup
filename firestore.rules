@@ -1,9 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // HIER_ADMIN_UID ersetzen! Es muss exakt derselbe Wert wie in firebase-config.js sein.
+    // In dieser Zeile die echte Admin-UID eintragen (wie in firebase-config.js).
     function isAdmin() {
-      return request.auth != null && request.auth.uid == 'RSyNpHZL6icGzo8cOdgXi8mHWBi2';
+      return request.auth != null && request.auth.uid == 'HIER_ADMIN_UID';
     }
     function isPlayer(id) {
       return request.auth != null &&
@@ -11,21 +11,74 @@ service cloud.firestore {
     }
     function isMatchParticipant() {
       let ids = resource.data.playerIds;
-      return (ids.size() > 0 && isPlayer(ids[0])) ||
-             (ids.size() > 1 && isPlayer(ids[1])) ||
-             (ids.size() > 2 && isPlayer(ids[2])) ||
-             (ids.size() > 3 && isPlayer(ids[3]));
+      return ids is list && ids.size() == 4 &&
+        (isPlayer(ids[0]) || isPlayer(ids[1]) || isPlayer(ids[2]) || isPlayer(ids[3]));
+    }
+    function isFriendly() { return resource.data.tournamentId == ''; }
+    function tournamentData() {
+      return get(/databases/$(database)/documents/tournaments/$(resource.data.tournamentId)).data;
+    }
+    function selfScheduleEnabled() {
+      return isFriendly() ? resource.data.selfSchedule == true : tournamentData().selfSchedule == true;
+    }
+    function selfScoreEnabled() {
+      return isFriendly() ? resource.data.selfScore == true : tournamentData().selfScore == true;
+    }
+    function scoreFormat() {
+      return isFriendly() ? resource.data.format : tournamentData().format;
     }
     function maySchedule() {
       return request.auth != null &&
-        resource.data.status == 'pending' &&
-        get(/databases/$(database)/documents/tournaments/$(resource.data.tournamentId)).data.selfSchedule == true &&
-        isMatchParticipant() &&
+        resource.data.status == 'pending' && selfScheduleEnabled() && isMatchParticipant() &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['scheduledAt', 'court']) &&
         request.resource.data.scheduledAt is string &&
         request.resource.data.scheduledAt.size() <= 24 &&
         request.resource.data.court is string &&
         request.resource.data.court.size() <= 40;
+    }
+    function validSet(s) {
+      return s is map && s.a is int && s.b is int && s.a >= 0 && s.b >= 0 &&
+        ((s.a == 6 && s.b <= 4) || (s.b == 6 && s.a <= 4) ||
+         (s.a == 7 && (s.b == 5 || s.b == 6)) ||
+         (s.b == 7 && (s.a == 5 || s.a == 6)));
+    }
+    function validSets(d) {
+      let x = d.sets;
+      return x is list && (x.size() == 2 || x.size() == 3) &&
+        validSet(x[0]) && validSet(x[1]) && (x.size() == 2 || validSet(x[2])) &&
+        d.scoreA == x[0].a + x[1].a + (x.size() == 3 ? x[2].a : 0) &&
+        d.scoreB == x[0].b + x[1].b + (x.size() == 3 ? x[2].b : 0) &&
+        (x.size() == 2 ?
+          ((x[0].a > x[0].b && x[1].a > x[1].b && d.winner == 'A') ||
+           (x[0].b > x[0].a && x[1].b > x[1].a && d.winner == 'B')) :
+          (((x[0].a > x[0].b && x[1].b > x[1].a) ||
+            (x[0].b > x[0].a && x[1].a > x[1].b)) &&
+            d.winner == (x[2].a > x[2].b ? 'A' : 'B')));
+    }
+    function validBalls(d, n) {
+      return d.sets is list && d.sets.size() == 0 &&
+        ((d.scoreA + d.scoreB == n) ||
+         (d.scoreA + d.scoreB == n + 1 &&
+          ((d.scoreA == n/2 + 1 && d.scoreB == n/2) ||
+           (d.scoreB == n/2 + 1 && d.scoreA == n/2)))) &&
+        d.winner == (d.scoreA > d.scoreB ? 'A' : (d.scoreB > d.scoreA ? 'B' : null)) &&
+        (d.scoreA != d.scoreB ||
+          !(resource.data.phase in ['semis', 'placement', 'final']));
+    }
+    function validScore() {
+      let d = request.resource.data;
+      return d.status == 'done' && d.scoreA is int && d.scoreB is int &&
+        d.scoreA >= 0 && d.scoreB >= 0 && d.scoreA <= 42 && d.scoreB <= 42 &&
+        d.winner in ['A', 'B', null] &&
+        (scoreFormat() == 'sets' ? validSets(d) :
+          (scoreFormat() == 'eight' ? validBalls(d, 8) : validBalls(d, 24)));
+    }
+    function mayReportScore() {
+      return request.auth != null && resource.data.status == 'pending' &&
+        selfScoreEnabled() && isMatchParticipant() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'scoreA', 'scoreB', 'sets', 'winner']) &&
+        validScore();
     }
     match /players/{id} {
       allow read: if true;
@@ -38,7 +91,17 @@ service cloud.firestore {
     match /matches/{id} {
       allow read: if true;
       allow create, delete: if isAdmin();
-      allow update: if isAdmin() || maySchedule();
+      allow update: if isAdmin() || maySchedule() || mayReportScore();
+    }
+    match /claims/{uid} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow create: if request.auth != null && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['playerId','requestedAt','approved']) &&
+        request.resource.data.keys().hasAll(['playerId','requestedAt','approved']) &&
+        request.resource.data.approved == false &&
+        request.resource.data.playerId is string &&
+        exists(/databases/$(database)/documents/players/$(request.resource.data.playerId));
+      allow update, delete: if isAdmin();
     }
     match /{document=**} {
       allow read, write: if false;

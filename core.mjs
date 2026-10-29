@@ -131,24 +131,24 @@ export function teamStandings(teams,matches){
       const side=m.teamAId===team.id?'A':'B', f=side==='A'?m.scoreA:m.scoreB,a=side==='A'?m.scoreB:m.scoreA;
       row.played++;row.for+=f;row.against+=a;row.diff+=f-a;
       if(f===a && m.winner===null){row.draws++;row.points++;}
-      else if(m.winner===side){row.wins++;row.points+=3;}
+      else if(m.winner===side){row.wins++;row.points+=2;}
       else row.losses++;
     });return row;
   }).sort((a,b)=>b.points-a.points||b.diff-a.diff||b.for-a.for||a.seed-b.seed);
 }
 export function individualStandings(t,matches){
-  const standings=t.participantIds.map((id,seed)=>({id,seed,played:0,balls:0,against:0,diff:0,wins:0,draws:0,rank:0}));
+  const standings=t.participantIds.map((id,seed)=>({id,seed,played:0,balls:0,against:0,diff:0,wins:0,draws:0,losses:0,points:0,rank:0}));
   const map=Object.fromEntries(standings.map(s=>[s.id,s]));
   for(const m of matches){if(m.status!=='done')continue;
     for(const side of ['A','B'])for(const id of m[side==='A'?'sideA':'sideB']){
       const r=map[id];if(!r)continue;
       const own=side==='A'?m.scoreA:m.scoreB,opp=side==='A'?m.scoreB:m.scoreA;
       r.played++;r.balls+=own;r.against+=opp;r.diff+=own-opp;
-      if(m.winner===side)r.wins++;else if(m.winner===null)r.draws++;
+      if(m.winner===side){r.wins++;r.points+=2;}else if(m.winner===null){r.draws++;r.points++;}else r.losses++;
     }
   }
-  standings.sort((a,b)=>b.balls-a.balls||b.diff-a.diff||b.wins-a.wins||a.seed-b.seed);
-  standings.forEach((r,i)=>{r.rank=(i && r.balls===standings[i-1].balls && r.diff===standings[i-1].diff && r.wins===standings[i-1].wins)?standings[i-1].rank:i+1;});
+  standings.sort((a,b)=>b.points-a.points||b.diff-a.diff||b.balls-a.balls||b.wins-a.wins||a.seed-b.seed);
+  standings.forEach((r,i)=>{r.rank=(i && r.points===standings[i-1].points && r.diff===standings[i-1].diff && r.balls===standings[i-1].balls && r.wins===standings[i-1].wins)?standings[i-1].rank:i+1;});
   return standings;
 }
 export function nextPhase(t,matches){
@@ -210,19 +210,42 @@ export function finishRanks(t,matches){
   }
   return individualStandings(t,m).map(x=>({id:x.id,rank:x.rank}));
 }
+/** Tournament standings use 2/1/0 match points. Overall adds points from EVERY
+ * completed match (including standalone friendlies) and a placement bonus when a
+ * tournament has finished. Matches contribute only once per participating player. */
 export function globalStandings(players,tournaments,matches){
-  const rows=players.map(p=>({id:p.id,name:p.name,total:0,appearances:0,average:0,best:0,results:[]}));const lookup=Object.fromEntries(rows.map(x=>[x.id,x]));
-  for(const t of tournaments){if(t.status!=='completed')continue;
-    const ranks=finishRanks(t,matches);const n=isTeamMode(t.mode)?t.teams.length:t.participantIds.length;
-    for(const r of ranks){const dest=lookup[r.id];if(!dest)continue;
-      // Earned points = participation base + normalized finish score. Each tournament contributes independently.
-      const value=Math.round((30+70*(n===1?1:(n-r.rank)/(n-1)))*10)/10;
-      dest.total+=value;dest.appearances++;dest.results.push({tournamentId:t.id,name:t.name,rank:r.rank,points:value});dest.best=Math.max(dest.best,value);
+  const rows=players.map(p=>({id:p.id,name:p.name,total:0,matchPoints:0,bonusPoints:0,appearances:0,average:0,best:0,results:[],played:0,wins:0,draws:0,losses:0,for:0,against:0,diff:0}));
+  const lookup=Object.fromEntries(rows.map(x=>[x.id,x]));
+  for(const m of matches){
+    if(m.status!=='done')continue;
+    for(const side of ['A','B'])for(const id of m[side==='A'?'sideA':'sideB']||[]){
+      const r=lookup[id];if(!r)continue;
+      const own=side==='A'?m.scoreA:m.scoreB,other=side==='A'?m.scoreB:m.scoreA;
+      r.played++;r.for+=own;r.against+=other;r.diff+=own-other;
+      if(m.winner===side){r.wins++;r.matchPoints+=2;}
+      else if(m.winner==null){r.draws++;r.matchPoints++;}
+      else r.losses++;
     }
   }
-  rows.forEach(x=>{x.total=Math.round(x.total*10)/10;x.average=x.appearances?Math.round(x.total/x.appearances*10)/10:0;});
-  return rows.sort((a,b)=>b.total-a.total||b.average-a.average||b.best-a.best||a.name.localeCompare(b.name,'de'));
+  for(const t of tournaments){
+    if(t.status!=='completed'&&!canComplete(t,matches))continue;
+    const ranks=finishRanks(t,matches),n=isTeamMode(t.mode)?t.teams.length:t.participantIds.length;
+    const first=Number.isFinite(Number(t.bonusFirst))?Number(t.bonusFirst):100;
+    const last=Number.isFinite(Number(t.bonusLast))?Number(t.bonusLast):30;
+    for(const r of ranks){const dest=lookup[r.id];if(!dest)continue;
+      const value=Math.round((last+(first-last)*(n===1?1:(n-r.rank)/(n-1)))*10)/10;
+      dest.bonusPoints+=value;dest.appearances++;dest.results.push({tournamentId:t.id,name:t.name,rank:r.rank,points:value});dest.best=Math.max(dest.best,value);
+    }
+  }
+  rows.forEach(r=>{r.bonusPoints=Math.round(r.bonusPoints*10)/10;r.total=Math.round((r.matchPoints+r.bonusPoints)*10)/10;r.average=r.appearances?Math.round(r.bonusPoints/r.appearances*10)/10:0;});
+  return rows.sort((a,b)=>b.total-a.total||b.bonusPoints-a.bonusPoints||b.matchPoints-a.matchPoints||b.diff-a.diff||a.name.localeCompare(b.name,'de'));
 }
+export function makeStandaloneMatch({id,sideA,sideB,format='eight',label='Freies Spiel',selfSchedule=false,selfScore=false,scheduledAt='',court=''}){
+  if(!FORMATS[format])throw Error('Ungültiges Matchformat.');
+  if(sideA.length!==2||sideB.length!==2||new Set([...sideA,...sideB]).size!==4||[...sideA,...sideB].some(x=>!x))throw Error('Für ein freies Doppel benötigst du vier unterschiedliche Spieler.');
+  return {id,tournamentId:'',sideA:[...sideA],sideB:[...sideB],playerIds:[...sideA,...sideB],format,label:label.trim().slice(0,90)||'Freies Spiel',phase:'friendly',round:1,order:0,status:'pending',scoreA:null,scoreB:null,sets:[],winner:null,scheduledAt,court,selfSchedule:Boolean(selfSchedule),selfScore:Boolean(selfScore)};
+}
+
 export function tournamentProgress(t,matches){const m=matches.filter(x=>x.tournamentId===t.id);return {done:m.filter(x=>x.status==='done').length,total:m.length};}
 export function validateTournament(t){
   const n=t.participantIds.length;if(n<4||n>12)throw Error('Bitte 4 bis 12 Teilnehmer auswählen.');
