@@ -4,13 +4,13 @@
  * Im unveränderten Zustand startet eine lokale Demo, die NICHT geräteübergreifend synchronisiert.
  */
 export const firebaseConfig = {
-  apiKey: 'HIER_API_KEY',
-  authDomain: 'HIER_PROJECT_ID.firebaseapp.com',
-  projectId: 'HIER_PROJECT_ID',
-  storageBucket: 'HIER_PROJECT_ID.firebasestorage.app',
-  messagingSenderId: 'HIER_MESSAGING_SENDER_ID',
-  appId: 'HIER_APP_ID'
+  apiKey: 'AIzaSyBjKRUccYcCKK24kH-i-LHJppRWfaM_ezU',
+  authDomain: 'malaga-padel-cup.firebaseapp.com',
+  projectId: 'malaga-padel-cup',
+  storageBucket: 'malaga-padel-cup.firebasestorage.app',
+  messagingSenderId: '18647197155',
+  appId: '1:18647197155:web:c6086d2d728d218fd6ecd6'
 };
 // Die UID deines Firebase-Authentication-Benutzers (NICHT Passwort oder E-Mail).
-export const ADMIN_UID = 'HIER_ADMIN_UID';
+export const ADMIN_UID = 'RSyNpHZL6icGzo8cOdgXi8mHWBi2';
 export const configured = !firebaseConfig.apiKey.startsWith('HIER_') && !firebaseConfig.projectId.startsWith('HIER_');
