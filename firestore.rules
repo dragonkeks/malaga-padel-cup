@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // In dieser Zeile die echte Admin-UID eintragen (wie in firebase-config.js).
     function isAdmin() {
-      return request.auth != null && request.auth.uid == 'RSyNpHZL6icGzo8cOdgXi8mHWBi2';
+      return request.auth != null && request.auth.uid == 'HIER_ADMIN_UID';
     }
     function isPlayer(id) {
       return request.auth != null &&
@@ -59,8 +59,8 @@ service cloud.firestore {
       return d.sets is list && d.sets.size() == 0 &&
         ((d.scoreA + d.scoreB == n) ||
          (d.scoreA + d.scoreB == n + 1 &&
-          ((d.scoreA == n/2 + 1 && d.scoreB == n/2) ||
-           (d.scoreB == n/2 + 1 && d.scoreA == n/2)))) &&
+          ((d.scoreA == d.scoreB + 1) ||
+           (d.scoreB == d.scoreA + 1)))) &&
         d.winner == (d.scoreA > d.scoreB ? 'A' : (d.scoreB > d.scoreA ? 'B' : null)) &&
         (d.scoreA != d.scoreB ||
           !(resource.data.phase in ['semis', 'placement', 'final']));
