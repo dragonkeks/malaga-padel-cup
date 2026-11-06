@@ -2,6 +2,34 @@
 export const MODES = { groups:'2 Gruppen + KO', league:'Jeder gegen jeden + Platzierung', americano:'Americano', mexicano:'Mexicano' };
 export const FORMATS = { sets:'Best of 3 Sätze', eight:'8 Bälle', twentyfour:'24 Bälle' };
 export const isTeamMode = mode => mode === 'groups' || mode === 'league';
+// A match stores its scoring config so changing the next phase cannot rewrite
+// historic results. Legacy tournaments without a scoring config still work.
+export function normalizeScoring(value='twentyfour') {
+  if (typeof value === 'string') {
+    if (value === 'sets') return {kind:'sets', balls:24, bestOf:3, gamesTo:6};
+    if (value === 'eight') return {kind:'balls', balls:8, bestOf:3, gamesTo:6};
+    if (value === 'twentyfour') return {kind:'balls', balls:24, bestOf:3, gamesTo:6};
+    throw Error('Unbekanntes Spielsystem.');
+  }
+  const config = {kind:value?.kind,balls:Number(value?.balls),bestOf:Number(value?.bestOf),gamesTo:Number(value?.gamesTo)};
+  if (config.kind !== 'balls' && config.kind !== 'sets') throw Error('Bitte Punkte oder Sätze auswählen.');
+  if (!Number.isInteger(config.balls) || config.balls<1 || config.balls>99) throw Error('Bitte 1–99 Bälle einstellen.');
+  if (![1,3,5].includes(config.bestOf)) throw Error('Bitte Best of 1, 3 oder 5 Sätze auswählen.');
+  if (!Number.isInteger(config.gamesTo)||config.gamesTo<2||config.gamesTo>20) throw Error('Bitte 2–20 Games pro Satz einstellen.');
+  return config;
+}
+export function scoringForPhase(t, phase) {
+  const finalPhase = ['semis','placement','final'].includes(phase);
+  return normalizeScoring((finalPhase ? t.scoringFinal : t.scoringPrelim) || t.format || 'twentyfour');
+}
+export function scoringForMatch(m, t=null) {
+  return normalizeScoring(m?.scoring || (t ? scoringForPhase(t,m?.phase) : m?.format || 'eight'));
+}
+export function scoringLabel(value) {
+  const s=normalizeScoring(value);
+  return s.kind==='balls'?`${s.balls} Bälle`:`Best of ${s.bestOf} · Satz bis ${s.gamesTo}`;
+}
+
 export const shuffle = (items, rng=Math.random) => {
   const a=[...items]; for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a;
 };
@@ -17,7 +45,7 @@ export function roundRobinRounds(items){
   return rounds;
 }
 function makeMatch(t, sideA, sideB, extra={}){
-  return { tournamentId:t.id, sideA:[...sideA], sideB:[...sideB], playerIds:[...sideA,...sideB], status:'pending', scoreA:null,scoreB:null,sets:[],winner:null,scheduledAt:'',court:'',round:1,order:0,phase:'',label:'',...extra };
+  return { tournamentId:t.id, sideA:[...sideA], sideB:[...sideB], playerIds:[...sideA,...sideB], status:'pending', scoreA:null,scoreB:null,sets:[],winner:null,scheduledAt:'',court:'',round:1,order:0,phase:'',label:'',...extra,scoring:scoringForPhase(t,extra.phase||'') };
 }
 export function buildInitialMatches(t){
   const out=[]; const add=(m)=>{m.order=out.length;out.push(m);};
@@ -100,27 +128,33 @@ export function buildMexicanoRound(t,prior,round){
 }
 export function formatScore(m,t){
   if(m.status!=='done')return '– : –';
-  if(t?.format==='sets')return (m.sets||[]).map(s=>`${s.a}:${s.b}`).join(' · ');
+  const config=scoringForMatch(m,t);
+  if(config.kind==='sets')return (m.sets||[]).map(s=>`${s.a}:${s.b}`).join(' · ');
   return `${m.scoreA} : ${m.scoreB}`;
 }
-export function checkScore(format,phase,a,b,sets=[]){
-  if(format==='sets'){
-    if(sets.length<2||sets.length>3)throw Error('Bitte 2 oder 3 vollständige Sätze eingeben.');
+export function checkScore(scoring,phase,a,b,sets=[]){
+  const rules=normalizeScoring(scoring);
+  if(rules.kind==='sets'){
+    const need=(rules.bestOf+1)/2;
+    if(sets.length<need||sets.length>rules.bestOf)throw Error(`Bitte ${need} bis ${rules.bestOf} vollständige Sätze eingeben.`);
     let winsA=0,winsB=0,totalA=0,totalB=0;
     for(const {a:x,b:y} of sets){
       if(!Number.isInteger(x)||!Number.isInteger(y)||x<0||y<0)throw Error('Ungültige Satzzahlen.');
-      const high=Math.max(x,y),low=Math.min(x,y);
-      if(!((high===6 && low<=4)||(high===7 && (low===5||low===6))))throw Error('Ein Satz endet 6:x (bis 4), 7:5 oder 7:6 mit Golden Point.');
+      const high=Math.max(x,y),low=Math.min(x,y),target=rules.gamesTo;
+      if(!((high===target && low<=target-2)||(high===target+1&&(low===target-1||low===target))))throw Error(`Ein Satz bis ${target} endet regulär mit zwei Games Abstand oder ${target+1}:${target} (Golden Point).`);
       if(x>y)winsA++;else winsB++;totalA+=x;totalB+=y;
     }
-    if((sets.length===3 && ((sets[0].a>sets[0].b)===(sets[1].a>sets[1].b))) || Math.max(winsA,winsB)!==2 || (sets.length===2 && Math.min(winsA,winsB)!==0) || (sets.length===3 && Math.min(winsA,winsB)!==1))throw Error('Das Match muss mit 2:0 oder 2:1 Sätzen enden.');
+    // No further sets after a team has already secured the match.
+    let aBefore=0,bBefore=0;
+    for(let i=0;i<sets.length-1;i++){if(sets[i].a>sets[i].b)aBefore++;else bBefore++;}
+    if(aBefore>=need||bBefore>=need||Math.max(winsA,winsB)!==need)throw Error(`Das Match muss mit ${need} gewonnenen Sätzen enden.`);
     return {scoreA:totalA,scoreB:totalB,sets,winner:winsA>winsB?'A':'B'};
   }
-  const n=format==='eight'?8:24;
+  const n=rules.balls;
   if(!Number.isInteger(a)||!Number.isInteger(b)||a<0||b<0)throw Error('Bitte ganze nichtnegative Ballpunkte eingeben.');
   const regular=a+b===n;
-  const golden=a+b===n+1 && Math.max(a,b)===n/2+1 && Math.min(a,b)===n/2;
-  if(!regular&&!golden)throw Error(`Es werden genau ${n} Bälle gespielt. Bei Gleichstand entscheidet ein zusätzlicher Golden Point (${n/2+1}:${n/2}).`);
+  const golden=n%2===0&&a+b===n+1&&Math.max(a,b)===n/2+1&&Math.min(a,b)===n/2;
+  if(!regular&&!golden)throw Error(`Es werden genau ${n} Bälle gespielt${n%2===0?` (bei Gleichstand optional ein entscheidender Golden Point)` : ''}.`);
   if(a===b && ['semis','placement','final'].includes(phase))throw Error('In KO- und Platzierungsspielen muss ein Sieger feststehen: Golden Point spielen und erfassen.');
   return {scoreA:a,scoreB:b,sets:[],winner:a===b?null:a>b?'A':'B'};
 }
@@ -240,10 +274,10 @@ export function globalStandings(players,tournaments,matches){
   rows.forEach(r=>{r.bonusPoints=Math.round(r.bonusPoints*10)/10;r.total=Math.round((r.matchPoints+r.bonusPoints)*10)/10;r.average=r.appearances?Math.round(r.bonusPoints/r.appearances*10)/10:0;});
   return rows.sort((a,b)=>b.total-a.total||b.bonusPoints-a.bonusPoints||b.matchPoints-a.matchPoints||b.diff-a.diff||a.name.localeCompare(b.name,'de'));
 }
-export function makeStandaloneMatch({id,sideA,sideB,format='eight',label='Freies Spiel',selfSchedule=false,selfScore=false,scheduledAt='',court=''}){
+export function makeStandaloneMatch({id,sideA,sideB,format='eight',label='Freies Spiel',selfSchedule=false,selfScore=false,scheduledAt='',court='',createdByUid='',createdByPlayerId='',source='admin'}){
   if(!FORMATS[format])throw Error('Ungültiges Matchformat.');
   if(sideA.length!==2||sideB.length!==2||new Set([...sideA,...sideB]).size!==4||[...sideA,...sideB].some(x=>!x))throw Error('Für ein freies Doppel benötigst du vier unterschiedliche Spieler.');
-  return {id,tournamentId:'',sideA:[...sideA],sideB:[...sideB],playerIds:[...sideA,...sideB],format,label:label.trim().slice(0,90)||'Freies Spiel',phase:'friendly',round:1,order:0,status:'pending',scoreA:null,scoreB:null,sets:[],winner:null,scheduledAt,court,selfSchedule:Boolean(selfSchedule),selfScore:Boolean(selfScore)};
+  return {id,tournamentId:'',sideA:[...sideA],sideB:[...sideB],playerIds:[...sideA,...sideB],format,label:label.trim().slice(0,90)||'Freies Spiel',phase:'friendly',round:1,order:0,status:'pending',scoreA:null,scoreB:null,sets:[],winner:null,scheduledAt,court,selfSchedule:Boolean(selfSchedule),selfScore:Boolean(selfScore),createdByUid,createdByPlayerId,source};
 }
 
 export function tournamentProgress(t,matches){const m=matches.filter(x=>x.tournamentId===t.id);return {done:m.filter(x=>x.status==='done').length,total:m.length};}

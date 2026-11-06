@@ -1,5 +1,5 @@
 import { firebaseConfig, ADMIN_UID, configured } from './firebase-config.js';
-import { MODES, FORMATS, isTeamMode, shuffle, buildInitialMatches, buildMexicanoRound, checkScore, nextPhase, canComplete, teamStandings, individualStandings, finishRanks, globalStandings, tournamentProgress, validateTournament, formatScore, makeStandaloneMatch } from './core.mjs';
+import { MODES, FORMATS, isTeamMode, shuffle, buildInitialMatches, buildMexicanoRound, checkScore, nextPhase, canComplete, teamStandings, individualStandings, finishRanks, globalStandings, tournamentProgress, validateTournament, formatScore, makeStandaloneMatch, normalizeScoring, scoringForPhase, scoringForMatch, scoringLabel } from './core.mjs';
 
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -16,7 +16,8 @@ const name=id=>player(id)?.name||'Unbekannt';
 const myPlayer=()=>state.players.find(p=>p.authUid&&p.authUid===state.user?.uid);
 const isAdmin=()=>state.demo || (Boolean(state.user)&&ADMIN_UID!=='HIER_ADMIN_UID'&&state.user.uid===ADMIN_UID);
 const myMatch=m=>(m.playerIds||[]).includes(myPlayer()?.id);
-const formatFor=m=>tour(m.tournamentId)?.format||m.format||'eight';
+const rulesFor=m=>scoringForMatch(m,tour(m.tournamentId));
+const formatFor=m=>rulesFor(m).kind;
 const isCompleted=t=>t.status==='completed'||canComplete(t,state.matches);
 const eligibleSchedule=m=>m.status==='pending'&&Boolean(tour(m.tournamentId)?.selfSchedule??m.selfSchedule)&&Boolean(myPlayer())&&myMatch(m);
 const eligibleScore=m=>m.status==='pending'&&Boolean(tour(m.tournamentId)?.selfScore??m.selfScore)&&Boolean(myPlayer())&&myMatch(m);
@@ -58,7 +59,7 @@ function matchCard(m){const mayEdit=isAdmin()||eligibleScore(m),maySchedule=isAd
     <div class="card-stage">${esc(m.label||matchTitle(m))}</div>
     <div class="team-line"><span class="team-name ${m.winner==='A'?'win':''}">${esc(sideNames(m,'A'))}</span><span class="team-score">${scoreOf(m,'A')}</span></div>
     <div class="team-line"><span class="team-name ${m.winner==='B'?'win':''}">${esc(sideNames(m,'B'))}</span><span class="team-score">${scoreOf(m,'B')}</span></div>
-    ${formatFor(m)==='sets'&&m.status==='done'?`<div class="small muted">Sätze: ${esc(formatScore(m,{format:formatFor(m)}))}</div>`:''}
+    ${formatFor(m)==='sets'&&m.status==='done'?`<div class="small muted">Sätze: ${esc(formatScore(m,tour(m.tournamentId)))}</div>`:''}
     <div class="match-footer"><span class="match-meta">${esc(m.scheduledAt?showDate(m.scheduledAt):matchTitle(m))}</span>
       <span class="list-row-actions">${maySchedule?`<button class="text-btn" data-action="schedule-match" data-id="${esc(m.id)}" type="button">Termin</button>`:''}${mayEdit?`<button class="text-btn" data-action="score" data-id="${esc(m.id)}" type="button">${isAdmin()?'Ergebnis':'Ergebnis melden'}</button>`:''}</span></div>
   </article>`;
@@ -76,9 +77,9 @@ function renderHome(){const tours=sortedTours();const active=tours.find(t=>!isCo
   <div class="section-title"><h2>ALLE TURNIERE</h2><button class="text-btn" data-action="navigate" data-page="standings">Tabellen ansehen ›</button></div><div class="tile-grid">${tours.map(renderTourTile).join('')}</div>
   ${overall.length?`<div class="section-title"><h2>GESAMTWERTUNG</h2><button class="text-btn" data-action="navigate" data-page="overall">Alle Platzierungen ›</button></div>${leaderboardTable(overall.slice(0,5),true)}`:''}`;
 }
-function renderTourTile(t){const p=tournamentProgress(t,state.matches);return `<article class="tile"><div class="subheading">${isCompleted(t)?'ABGESCHLOSSEN':'AKTIV · LIVE'}</div><h3>${esc(t.name)}</h3><div class="small muted">${esc(MODES[t.mode])}</div><div class="chip-row"><span class="chip">${t.participantIds.length} Spieler</span><span class="chip">${esc(FORMATS[t.format])}</span>${t.selfSchedule?'<span class="chip">Selbstterminierung</span>':''}</div><div class="tile-bottom"><div><strong>${p.done}/${p.total}</strong> <span class="muted small">Matches</span></div><button class="btn btn-outline btn-sm" data-action="show-table" data-id="${esc(t.id)}">Tabelle ansehen</button></div></article>`;}
+function renderTourTile(t){const p=tournamentProgress(t,state.matches);return `<article class="tile"><div class="subheading">${isCompleted(t)?'ABGESCHLOSSEN':'AKTIV · LIVE'}</div><h3>${esc(t.name)}</h3><div class="small muted">${esc(MODES[t.mode])}</div><div class="chip-row"><span class="chip">${t.participantIds.length} Spieler</span><span class="chip">Vorrunde: ${esc(scoringLabel(scoringForPhase(t,'groups')))}</span>${isTeamMode(t.mode)?`<span class="chip">Endrunde: ${esc(scoringLabel(scoringForPhase(t,'final')))}</span>`:''}${t.selfSchedule?'<span class="chip">Selbstterminierung</span>':''}</div><div class="tile-bottom"><div><strong>${p.done}/${p.total}</strong> <span class="muted small">Matches</span></div><button class="btn btn-outline btn-sm" data-action="show-table" data-id="${esc(t.id)}">Tabelle ansehen</button></div></article>`;}
 function renderSchedule(){const m=state.matches.filter(x=>state.scheduleFilter==='all'||(state.scheduleFilter==='friendly'?!x.tournamentId:x.tournamentId===state.scheduleFilter)).sort((a,b)=>{const dateA=a.scheduledAt||'9999',dateB=b.scheduledAt||'9999';return dateA.localeCompare(dateB)||a.order-b.order;});
-  return `<div class="page-heading"><div><h1>SPIELPLAN</h1><p>Alle Spiele, Courts und Anstoßzeiten auf einen Blick.</p></div>${isAdmin()?'<button class="btn btn-blue" data-action="auto-schedule">Zeitplan erstellen</button>':''}</div>${renderTourFilters(state.scheduleFilter,'schedule-filter',true,true)}
+  return `<div class="page-heading"><div><h1>SPIELPLAN</h1><p>Alle Spiele, Courts und Anstoßzeiten auf einen Blick.</p></div><div class="list-row-actions">${(myPlayer()||state.demo)?'<button class="btn btn-lime" data-action="new-friendly">+ Eigenes Spiel erstellen</button>':''}${isAdmin()?'<button class="btn btn-blue" data-action="auto-schedule">Zeitplan erstellen</button>':''}</div></div>${renderTourFilters(state.scheduleFilter,'schedule-filter',true,true)}
   ${m.length?`<div class="match-grid">${m.map(matchCard).join('')}</div>`:empty('Keine Spiele vorhanden','Erstelle in der Administration ein Turnier.')}`;
 }
 function renderTourFilters(selected,action,withAll=true,withFriendlies=false){return `<div class="filters">${withAll?`<button class="filter-btn ${selected==='all'?'active':''}" data-action="${action}" data-id="all">Alle Spiele</button>`:''}${withFriendlies?`<button class="filter-btn ${selected==='friendly'?'active':''}" data-action="${action}" data-id="friendly">Freie Spiele</button>`:''}${sortedTours().map(t=>`<button class="filter-btn ${selected===t.id?'active':''}" data-action="${action}" data-id="${esc(t.id)}">${esc(t.name)}</button>`).join('')}</div>`;}
@@ -86,7 +87,7 @@ function renderStandings(){const tours=sortedTours();const id=tour(state.filter)
   if(!t)return `<div class="page-heading"><h1>LIVE-TABELLEN</h1></div>${empty('Noch keine Turniere','Die Ranglisten erscheinen nach dem Erstellen.')}`;
   const matches=tMatches(t),prog=tournamentProgress(t,state.matches);
   return `<div class="page-heading"><div><h1>LIVE-TABELLEN</h1><p>Tabellen, Platzierungen und Turnierfortschritt.</p></div><span class="pill" style="background:#dfeafa;color:#295682">${prog.done}/${prog.total} Matches</span></div>${renderTourFilters(t.id,'table-filter',false)}
-    <div class="tile" style="margin-bottom:17px"><div class="subheading">${esc(MODES[t.mode])}</div><h2 style="margin:8px 0">${esc(t.name)}</h2><div class="chip-row"><span class="chip">${esc(FORMATS[t.format])}</span><span class="chip">${t.participantIds.length} Spieler</span><span class="chip">${isCompleted(t)?'Endstand':'Zwischenstand'}</span></div></div>
+    <div class="tile" style="margin-bottom:17px"><div class="subheading">${esc(MODES[t.mode])}</div><h2 style="margin:8px 0">${esc(t.name)}</h2><div class="chip-row"><span class="chip">Vorrunde: ${esc(scoringLabel(scoringForPhase(t,'groups')))}</span>${isTeamMode(t.mode)?`<span class="chip">Endrunde: ${esc(scoringLabel(scoringForPhase(t,'final')))}</span>`:''}<span class="chip">${t.participantIds.length} Spieler</span><span class="chip">${isCompleted(t)?'Endstand':'Zwischenstand'}</span></div></div>
     ${isTeamMode(t.mode)?renderTeamStandings(t,matches):renderIndividualStandings(t,matches)}
     <div class="section-title"><h2>SPIELE & PLATZIERUNGEN</h2><span class="section-note">Alle Spielphasen</span></div>
     <div class="match-grid">${matches.map(matchCard).join('')}</div>`;
@@ -119,16 +120,31 @@ function renderProfile(){if(!state.user&&!state.demo)return `<div class="page-he
   return `<div class="page-heading"><div><h1>MEIN BEREICH</h1><p>${esc(chosen.name)} · Deine persönlichen Ergebnisse und nächsten Termine.</p></div></div>
     ${state.demo?'<div class="info">Demo-Vorschau: Hier wird beispielhaft der erste Spieler gezeigt. In Firebase sieht jeder nur sein eigenes Profil.</div>':''}
     <div class="top-panes profile-metrics"><div class="stat-card"><div><div class="small muted">Gesamtpunkte</div><strong>${r?.total||0}</strong></div><span>🏆</span></div><div class="stat-card"><div><div class="small muted">Matchsiege</div><strong>${r?.wins||0}</strong></div><span>🎾</span></div><div class="stat-card"><div><div class="small muted">Meine Spiele</div><strong>${games.length}</strong></div><span>📅</span></div></div>
-    <div class="section-title"><h2>MEINE OFFENEN MATCHES</h2><span class="section-note">Nach Datum und Uhrzeit</span></div>${coming.length?`<div class="match-grid">${coming.map(matchCard).join('')}</div>`:empty('Keine offenen Matches','Du bist aktuell nicht für weitere Spiele eingeteilt.')}
+    <div class="profile-quick-action"><button type="button" class="btn btn-lime" data-action="new-friendly">+ Freies Doppel mit anderen Spielern erstellen</button></div><div class="section-title"><h2>MEINE OFFENEN MATCHES</h2><span class="section-note">Nach Datum und Uhrzeit</span></div>${coming.length?`<div class="match-grid">${coming.map(matchCard).join('')}</div>`:empty('Keine offenen Matches','Du bist aktuell nicht für weitere Spiele eingeteilt.')}
     <div class="section-title"><h2>MEINE GESPIELTEN MATCHES</h2></div>${done.length?`<div class="match-grid">${done.map(matchCard).join('')}</div>`:empty('Noch keine Ergebnisse','Deine abgeschlossenen Partien erscheinen hier.')}
     <div class="section-title"><h2>TURNIERPLATZIERUNGEN</h2></div><div class="panel">${r?.results.length?r.results.map(x=>`<div class="list-row"><span>${esc(x.name)} · Platz ${x.rank}</span><strong>+${x.points} Bonus</strong></div>`).join(''):'Noch keine abgeschlossenen Turniere.'}</div>`;
 }
 
-function ensureDraft(){if(state.draft)return;state.draft={name:'Málaga Padel Cup',mode:'groups',format:'twentyfour',participantIds:state.players.slice(0,12).map(p=>p.id),randomTeams:true,teams:[],rounds:5,selfSchedule:false,selfScore:false,bonusFirst:100,bonusLast:30};syncDraftTeams();}
+function ensureDraft(){if(state.draft)return;state.draft={name:'Málaga Padel Cup',mode:'groups',format:'twentyfour',participantIds:state.players.slice(0,12).map(p=>p.id),randomTeams:true,teams:[],rounds:5,selfSchedule:false,selfScore:false,bonusFirst:100,bonusLast:30,scoringPrelim:normalizeScoring('twentyfour'),scoringFinal:normalizeScoring('sets')};syncDraftTeams();}
 function syncDraftTeams(){const d=state.draft;if(!d)return;
   const count=Math.floor(d.participantIds.length/2),old=d.teams;
   d.teams=Array.from({length:count},(_,i)=>({name:old[i]?.name??`Team ${i+1}`,playerIds:[old[i]?.playerIds?.[0]||d.participantIds[2*i]||'',old[i]?.playerIds?.[1]||d.participantIds[2*i+1]||'']}));
   d.teams.forEach((tm,i)=>tm.playerIds=tm.playerIds.map((id,j)=>d.participantIds.includes(id)?id:(d.participantIds[i*2+j]||'')));
+}
+function scoringFields(prefix,config,title){
+  const c=normalizeScoring(config);
+  const kindName=prefix+'-kind',ballsName=prefix+'-balls',bestOfName=prefix+'-bestof',gamesToName=prefix+'-gamesto';
+  return `<div class="scoring-box"><h3>${esc(title)}</h3><div class="field"><label>Wertungssystem</label><select name="${kindName}"><option value="balls" ${c.kind==='balls'?'selected':''}>Punkte / Bälle</option><option value="sets" ${c.kind==='sets'?'selected':''}>Sätze</option></select></div>
+  <div data-scoring-kind="balls" ${c.kind!=='balls'?'hidden':''}><div class="field"><label>Wie viele Bälle pro Match? (1–99)</label><input type="number" name="${ballsName}" min="1" max="99" step="1" value="${c.balls}"><p class="field-help">Beispiel: 12 = insgesamt 12 ausgespielte Bälle. Bei Gleichstand optional Golden Point; in KO-Spielen verpflichtend.</p></div></div>
+  <div data-scoring-kind="sets" ${c.kind!=='sets'?'hidden':''}><div class="inline-fields"><div class="field"><label>Gewinnsätze</label><select name="${bestOfName}">${[1,3,5].map(n=>`<option value="${n}" ${c.bestOf===n?'selected':''}>Best of ${n}</option>`).join('')}</select></div><div class="field"><label>Games pro Satz (2–20)</label><input type="number" name="${gamesToName}" min="2" max="20" step="1" value="${c.gamesTo}"></div></div><p class="field-help">Zwei Games Abstand; bei Gleichstand (z. B. 6:6) entscheidet ein Golden Point.</p></div>
+  </div>`;
+}
+function editedScoring(form,prefix,original){
+  const result={...normalizeScoring(original)};
+  result.kind=form.elements[prefix+'-kind'].value;
+  if(result.kind==='balls')result.balls=Number(form.elements[prefix+'-balls'].value);
+  else {result.bestOf=Number(form.elements[prefix+'-bestof'].value);result.gamesTo=Number(form.elements[prefix+'-gamesto'].value);}
+  return normalizeScoring(result);
 }
 function renderAdmin(){if(!isAdmin())return `<div class="page-heading"><div><h1>TURNIERLEITUNG</h1><p>Der Admin-Bereich ist geschützt.</p></div></div><div class="panel" style="max-width:550px"><h3>Admin-Anmeldung</h3><p class="muted">Nur das in der Firebase-Konfiguration hinterlegte Admin-Konto darf Spieler verwalten, Turniere erstellen, Ergebnisse ändern oder Turniere löschen.</p><button class="btn btn-blue" data-action="auth">Mit E-Mail anmelden</button>${!configured?'<p class="small muted">Im Demo-Modus wird der Admin-Bereich ohne Anmeldung freigeschaltet.</p>':''}</div>`;
   ensureDraft();
@@ -145,11 +161,11 @@ function renderTournamentPanel(){const tours=sortedTours();return `<div class="a
 function renderPlayersPanel(){return `<div class="admin-grid"><section class="panel"><h3>Spieler hinzufügen</h3><form id="player-add-form"><div class="field"><label for="playername">Spielername</label><input id="playername" name="playername" maxlength="65" placeholder="z. B. Max Muster" required></div><button class="btn btn-blue btn-wide" type="submit">+ Spieler hinzufügen</button></form><hr class="subtle-hr"><p class="small muted">Maximal 12 Personen pro Turnier. Die Spielerliste darf größer sein, wenn verschiedene Gruppen an unterschiedlichen Turnieren teilnehmen.</p><div class="info">Spieler registrieren sich über ihren Namen und ein Passwort. Du bestätigst die Anfrage unten. Erst danach dürfen sie freigegebene Termine und Ergebnisse bearbeiten. Bestehende E-Mail-Konten können weiterhin per UID verknüpft werden.</div></section>
   <section class="panel"><h3>Spielerliste (${state.players.length})</h3><div class="list-rows">${state.players.length?state.players.slice().sort((a,b)=>a.name.localeCompare(b.name,'de')).map(p=>`<div class="list-row"><div><strong>${esc(p.name)}</strong><div class="detail">${p.authUid?'🔗 Firebase-Konto verknüpft':'Kein Konto verknüpft'}</div></div><div class="list-row-actions"><button class="btn btn-outline btn-sm" data-action="edit-player" data-id="${esc(p.id)}">Bearbeiten</button><button class="btn btn-danger btn-sm" data-action="delete-player" data-id="${esc(p.id)}">×</button></div></div>`).join(''):'<div class="empty-small">Noch keine Spieler eingetragen.</div>'}</div></section>${renderClaimPanel()}</div>`;}
 function renderCreatePanel(){const d=state.draft;const teamMode=isTeamMode(d.mode);
-  const formatOptions=Object.entries(FORMATS).map(([id,title])=>`<option value="${id}" ${d.format===id?'selected':''}>${esc(title)}</option>`).join('');
   return `<div class="admin-grid"><section class="panel"><h3>1. Turnier konfigurieren</h3>
     <div class="field"><label>Turniername</label><input name="draft-name" maxlength="90" value="${esc(d.name)}" placeholder="z. B. Málaga Cup · Freitag"></div>
     <div class="field"><label>Turniermodus</label><select name="draft-mode">${Object.entries(MODES).map(([id,title])=>`<option value="${id}" ${d.mode===id?'selected':''}>${esc(title)}</option>`).join('')}</select></div>
-    <div class="field"><label>Spiel- / Punktesystem</label><select name="draft-format">${formatOptions}</select><div class="field-help">Best of 3: Sätze bis 6, zwei Punkte Abstand, bei 6:6 Golden Point (7:6). Oder 8 bzw. 24 Bälle pro Match; bei Unentschieden ist ein zusätzlicher Golden Point möglich.</div></div>
+    ${scoringFields('draft-prelim',d.scoringPrelim,'Vorrunde / reguläre Runden')}
+    ${isTeamMode(d.mode)?scoringFields('draft-final',d.scoringFinal,'Endrunde / KO / Platzierungsspiele'):'<p class="small muted">Americano und Mexicano verwenden die Vorrunden-Einstellung für alle Runden.</p>'}
     ${d.mode==='mexicano'?`<div class="field"><label>Mexicano-Runden (1–30)</label><input name="draft-rounds" type="number" min="1" max="30" value="${d.rounds}"></div>`:''}
     <label class="checkline"><input name="draft-random" type="checkbox" ${d.randomTeams?'checked':''}><span>${teamMode?'Teams automatisch zufällig mischen':'Startreihenfolge zufällig mischen'}</span></label>
     <label class="checkline" style="margin-top:8px"><input name="draft-self" type="checkbox" ${d.selfSchedule?'checked':''}><span>Spieler dürfen eigene Matches terminieren</span></label>
@@ -166,6 +182,17 @@ function renderCreatePanel(){const d=state.draft;const teamMode=isTeamMode(d.mod
 }
 function renderTeamEditor(d){return d.teams.map((team,i)=>`<div class="team-editor"><div class="team-editor-row"><input aria-label="Name Team ${i+1}" placeholder="Teamname" data-team-name="${i}" value="${esc(team.name)}">${[0,1].map(j=>`<select aria-label="Spieler ${j+1} für Team ${i+1}" data-team-player="${i}" data-slot="${j}"><option value="">Spieler wählen …</option>${d.participantIds.map(id=>`<option value="${esc(id)}" ${team.playerIds[j]===id?'selected':''}>${esc(name(id))}</option>`).join('')}</select>`).join('')}</div></div>`).join('');}
 
+function openPlayerFriendly(){
+  const own=myPlayer()||(state.demo?state.players[0]:null);
+  if(!own){toast('Bitte zuerst anmelden und dein Spielerkonto von der Turnierleitung freigeben lassen.',true);return;}
+  const choices=state.players.slice().sort((a,b)=>a.name.localeCompare(b.name,'de')).filter(p=>p.id!==own.id).map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+  modal(`${modalTitle('Eigenes freies Doppel erstellen')}<div class="info">Du bist automatisch als erster Spieler in Team A eingetragen. Wähle drei weitere Personen. Das Spiel zählt als freies Match für die Gesamtwertung (Sieg 2 Punkte, Unentschieden 1). Du darfst den Termin und das Ergebnis später gemeinsam mit den Mitspielern eintragen.</div>
+  <form id="player-friendly-form"><div class="field"><label>Bezeichnung</label><input name="label" maxlength="90" value="Freies Doppel" required></div><div class="field"><label>Spielsystem</label><select name="format">${Object.entries(FORMATS).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join('')}</select></div>
+  <h3>Team A</h3><div class="field"><label>Du</label><input value="${esc(own.name)}" readonly><input type="hidden" name="a0" value="${esc(own.id)}"></div><div class="field"><label>Dein Partner</label><select name="a1" required><option value="">Auswählen …</option>${choices}</select></div>
+  <h3>Team B</h3><div class="inline-fields">${[0,1].map(i=>`<div class="field"><label>Gegner ${i+1}</label><select name="b${i}" required><option value="">Auswählen …</option>${choices}</select></div>`).join('')}</div>
+  <div class="field"><label>Datum & Uhrzeit (optional)</label><input type="datetime-local" name="scheduledAt"></div><div class="field"><label>Court (optional)</label><input name="court" maxlength="40" placeholder="z. B. D6"></div>
+  <div class="modal-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Abbrechen</button><button type="submit" class="btn btn-lime">Spiel erstellen</button></div></form>`);
+}
 function openAuth(){if(state.demo){modal(`${modalTitle('Demo-Modus')}<p>Im Demo-Modus kannst du alle Verwaltungs- und Tabellenfunktionen testen. Personenbezogene Anmeldung ist erst mit eingerichtetem Firebase möglich.</p><button class="btn btn-blue" data-action="close-modal">Schließen</button>`);return;}
   if(state.user){const p=myPlayer();modal(`${modalTitle('Dein Konto')}<p><strong>${esc(p?.name||(isAdmin()?'Turnierleitung':'Konto noch nicht zugeordnet'))}</strong></p><p class="small muted">${isAdmin()?'Du bist als Turnierleitung angemeldet.':p?'Dein Profil ist freigeschaltet.':'Bitte warte auf die Bestätigung durch die Turnierleitung.'}</p><div class="field"><label>Konto-UID (für manuellen Support)</label><input readonly value="${esc(state.user.uid)}"></div><div class="modal-actions"><button class="btn btn-outline" data-action="copy-uid">UID kopieren</button><button class="btn btn-danger" data-action="logout">Abmelden</button></div>`);return;}
   const options=state.players.slice().sort((a,b)=>a.name.localeCompare(b.name,'de')).map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
@@ -182,6 +209,9 @@ function openTournamentEdit(id){
   const locked=tMatches(t).some(m=>m.status==='done');
   modal(`${modalTitle('Turnier bearbeiten')}<form id="tournament-edit-form" data-id="${esc(t.id)}">
     <div class="field"><label>Turniername</label><input name="name" maxlength="90" required value="${esc(t.name)}"></div>
+    ${scoringFields('edit-prelim',t.scoringPrelim||t.format||'twentyfour','Vorrunde / reguläre Runden')}
+    ${isTeamMode(t.mode)?scoringFields('edit-final',t.scoringFinal||t.format||'twentyfour','Endrunde / KO / Platzierungsspiele'):'<p class="small muted">Dieser Modus verwendet in allen Runden die Vorrunden-Einstellung.</p>'}
+    <div class="info">Beim Speichern übernehmen nur noch <strong>offene Matches</strong> die neue Einstellung. Abgeschlossene Matches behalten ihre ursprüngliche Spielwertung.</div>
     <label class="checkline"><input name="selfSchedule" type="checkbox" ${t.selfSchedule?'checked':''}> <span>Spieler dürfen ihre Match-Termine selbst eintragen</span></label><label class="checkline"><input name="selfScore" type="checkbox" ${t.selfScore?'checked':''}> <span>Spieler dürfen Match-Ergebnisse melden</span></label><div class="inline-fields"><div class="field"><label>Bonus 1. Platz</label><input name="bonusFirst" type="number" value="${t.bonusFirst??100}" min="0" max="1000" required></div><div class="field"><label>Bonus letzter Platz</label><input name="bonusLast" type="number" value="${t.bonusLast??30}" min="0" max="1000" required></div></div>
     ${isTeamMode(t.mode)?`<h3 style="margin:20px 0 10px">Teams & Zuteilung</h3>
       ${locked?'<div class="alert">Es wurden bereits Ergebnisse eingetragen. Um diese nicht zu verfälschen, kannst du nur noch Teamnamen ändern. Spielerzuteilungen bleiben gesperrt.</div>':'<p class="small muted">Du kannst Spieler zwischen Zweierteams tauschen. Bereits festgelegte Spieltermine werden bei Änderungen der Zuteilung gelöscht.</p>'}
@@ -193,7 +223,7 @@ async function saveTournamentEdit(form){
   if(!isAdmin())throw Error('Keine Admin-Berechtigung.');
   const t=tour(form.dataset.id);if(!t)throw Error('Turnier nicht gefunden.');
   const title=form.elements.name.value.trim();if(!title||title.length>90)throw Error('Turniername fehlt.');
-  const ops=[];const updates={name:title,selfSchedule:form.elements.selfSchedule.checked,selfScore:form.elements.selfScore.checked,bonusFirst:Number(form.elements.bonusFirst.value),bonusLast:Number(form.elements.bonusLast.value)};if(!Number.isFinite(updates.bonusFirst)||!Number.isFinite(updates.bonusLast)||updates.bonusLast<0||updates.bonusFirst<updates.bonusLast||updates.bonusFirst>1000)throw Error('Ungültige Bonusgrenzen.');
+  const ops=[];const updates={name:title,selfSchedule:form.elements.selfSchedule.checked,selfScore:form.elements.selfScore.checked,bonusFirst:Number(form.elements.bonusFirst.value),bonusLast:Number(form.elements.bonusLast.value),scoringPrelim:editedScoring(form,'edit-prelim',t.scoringPrelim||t.format||'twentyfour'),scoringFinal:isTeamMode(t.mode)?editedScoring(form,'edit-final',t.scoringFinal||t.format||'twentyfour'):normalizeScoring(t.scoringFinal||t.format||'twentyfour')};if(!Number.isFinite(updates.bonusFirst)||!Number.isFinite(updates.bonusLast)||updates.bonusLast<0||updates.bonusFirst<updates.bonusLast||updates.bonusFirst>1000)throw Error('Ungültige Bonusgrenzen.');
   if(isTeamMode(t.mode)){
     const locked=tMatches(t).some(m=>m.status==='done');
     const teams=t.teams.map((old,i)=>({id:old.id,name:form.elements[`teamName-${i}`].value.trim(),playerIds:locked?[...old.playerIds]:old.playerIds.map((_,j)=>form.elements[`teamPlayer-${i}-${j}`].value)}));
@@ -211,14 +241,21 @@ async function saveTournamentEdit(form){
       }
     }
   }
+  // Set a stable format on every match. Historic scores retain their old rules,
+  // and all still-pending matches inherit the updated phase rules.
+  for(const m of tMatches(t)){
+    const scoring=m.status==='done' ? scoringForMatch(m,t) : scoringForPhase({...t,...updates},m.phase);
+    ops.push({action:'update',collection:'matches',id:m.id,data:{scoring}});
+  }
   ops.unshift({action:'update',collection:'tournaments',id:t.id,data:updates});
   await mutate(ops);closeModal();toast('Turnierdaten aktualisiert.');
 }
 function openPlayerEdit(id){const p=player(id);if(!p)return;modal(`${modalTitle('Spieler bearbeiten')}<form id="player-edit-form" data-id="${esc(id)}"><div class="field"><label>Name</label><input name="name" maxlength="65" required value="${esc(p.name)}"></div><div class="field"><label>Firebase-Konto-UID des Spielers (optional)</label><input name="authUid" maxlength="130" value="${esc(p.authUid||'')}" placeholder="Hier die UID aus dem Spieler-Konto einfügen"><p class="field-help">Automatische Kontofreigabe erfolgt über „Registrierungsanfragen“. UID hier nur für bestehende E-Mail-Konten oder manuelle Korrekturen eintragen.</p></div><div class="modal-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Abbrechen</button><button type="submit" class="btn btn-blue">Speichern</button></div></form>`);}
 function openScore(id){const m=state.matches.find(x=>x.id===id),t=tour(m?.tournamentId);if(!m)return;
-  const format=formatFor(m);
+  const config=rulesFor(m);
   const labels=`<p class="small muted"><strong>${esc(sideNames(m,'A'))}</strong> gegen <strong>${esc(sideNames(m,'B'))}</strong></p>`;
-  const fields=format==='sets'?`<p class="small muted">Trage 2 oder 3 Sätze ein. Möglich: 6:0 bis 6:4, 7:5 oder 7:6 (Golden Point).</p>${Array.from({length:3},(_,i)=>`<div class="set-grid"><div class="field"><label>${i+1}. Satz · ${esc(sideNames(m,'A'))}</label><input type="number" name="set-a-${i}" min="0" max="7" ${i<2?'required':''} value="${m.sets?.[i]?.a??''}"></div><div class="field"><label>${i+1}. Satz · ${esc(sideNames(m,'B'))}</label><input type="number" name="set-b-${i}" min="0" max="7" ${i<2?'required':''} value="${m.sets?.[i]?.b??''}"></div></div>`).join('')}`:`<p class="small muted">Insgesamt ${format==='eight'?'8':'24'} Bälle. Bei Gleichstand ist ein entscheidender Golden Point möglich.</p><div class="inline-fields"><div class="field"><label>${esc(sideNames(m,'A'))}</label><input type="number" name="score-a" min="0" step="1" required value="${m.scoreA??''}"></div><div class="field"><label>${esc(sideNames(m,'B'))}</label><input type="number" name="score-b" min="0" step="1" required value="${m.scoreB??''}"></div></div>`;
+  const need=(config.bestOf+1)/2;
+  const fields=config.kind==='sets'?`<p class="small muted">${esc(scoringLabel(config))}: Bitte ${need} bis ${config.bestOf} Satz-Ergebnisse eingeben (max. ${config.gamesTo+1} Games pro Team und Satz).</p>${Array.from({length:config.bestOf},(_,i)=>`<div class="set-grid"><div class="field"><label>${i+1}. Satz · ${esc(sideNames(m,'A'))}</label><input type="number" name="set-a-${i}" min="0" max="${config.gamesTo+1}" ${i<need?'required':''} value="${m.sets?.[i]?.a??''}"></div><div class="field"><label>${i+1}. Satz · ${esc(sideNames(m,'B'))}</label><input type="number" name="set-b-${i}" min="0" max="${config.gamesTo+1}" ${i<need?'required':''} value="${m.sets?.[i]?.b??''}"></div></div>`).join('')}`:`<p class="small muted">Insgesamt ${config.balls} Bälle. ${config.balls%2===0?'Bei Gleichstand ist ein entscheidender Golden Point möglich.':''}</p><div class="inline-fields"><div class="field"><label>${esc(sideNames(m,'A'))}</label><input type="number" name="score-a" min="0" max="100" step="1" required value="${m.scoreA??''}"></div><div class="field"><label>${esc(sideNames(m,'B'))}</label><input type="number" name="score-b" min="0" max="100" step="1" required value="${m.scoreB??''}"></div></div>`;
   const followUps=t&&((t.mode==='groups' && m.phase==='groups' && !['groups'].includes(t.phase)) ||
     (t.mode==='league' && m.phase==='league' && !['league'].includes(t.phase)) ||
     (t.mode==='mexicano' && m.round < Math.max(0,...tMatches(t).map(x=>x.round))));
@@ -257,7 +294,7 @@ async function createTournament(){
   if(!isAdmin())throw Error('Keine Admin-Berechtigung.');ensureDraft();const d=state.draft;
   const id=key(),part=[...d.participantIds];const assigned=d.randomTeams?shuffle(part):part;
   const teams=isTeamMode(d.mode)?Array.from({length:part.length/2},(_,i)=>({id:`team-${i+1}`,name:d.randomTeams?`Team ${i+1}`:(d.teams[i]?.name||'').trim(),playerIds:d.randomTeams?assigned.slice(i*2,i*2+2):[...(d.teams[i]?.playerIds||[])]})):[];
-  const t={id,name:d.name.trim(),mode:d.mode,format:d.format,participantIds:part,teams,seed:assigned,rounds:+d.rounds||5,selfSchedule:d.selfSchedule,selfScore:d.selfScore,bonusFirst:+d.bonusFirst,bonusLast:+d.bonusLast,phase:({groups:'groups',league:'league',americano:'americano',mexicano:'mexicano'})[d.mode],status:'running',createdAt:Date.now()};
+  const t={id,name:d.name.trim(),mode:d.mode,format:d.format,scoringPrelim:normalizeScoring(d.scoringPrelim),scoringFinal:normalizeScoring(d.scoringFinal),participantIds:part,teams,seed:assigned,rounds:+d.rounds||5,selfSchedule:d.selfSchedule,selfScore:d.selfScore,bonusFirst:+d.bonusFirst,bonusLast:+d.bonusLast,phase:({groups:'groups',league:'league',americano:'americano',mexicano:'mexicano'})[d.mode],status:'running',createdAt:Date.now()};
   if(!t.name||t.name.length>90)throw Error('Bitte einen Turniernamen eingeben.');if(t.bonusFirst<t.bonusLast||t.bonusLast<0||t.bonusFirst>1000)throw Error('Bonus: erster Platz muss mindestens so viele Punkte wie der letzte erhalten (0–1000).');validateTournament(t);
   const matches=buildInitialMatches(t).map(m=>({...m,id:key()}));
   await mutate([{action:'create',collection:'tournaments',id:t.id,data:Object.fromEntries(Object.entries(t).filter(([k])=>k!=='id'))},...matches.map(m=>({action:'create',collection:'matches',id:m.id,data:Object.fromEntries(Object.entries(m).filter(([k])=>k!=='id'))}))]);
@@ -273,14 +310,14 @@ async function removeTournament(id){if(!isAdmin())throw Error('Keine Berechtigun
 async function removePlayer(id){if(!isAdmin())throw Error('Keine Berechtigung.');if(state.tournaments.some(t=>t.participantIds.includes(id))||state.matches.some(m=>(m.playerIds||[]).includes(id)))throw Error('Spieler ist noch einem Turnier oder Match zugeordnet. Erst die betreffenden Spiele löschen.');const p=player(id);if(!p)return;if(!window.confirm(`Spieler „${p.name}“ löschen?`))return;await mutate([{action:'delete',collection:'players',id}]);state.draft=null;toast('Spieler gelöscht.');}
 async function saveScore(form){const id=form.dataset.id,m=state.matches.find(x=>x.id===id),t=tour(m?.tournamentId);if(!m)throw Error('Match fehlt.');
   if(!isAdmin()&&!eligibleScore(m))throw Error('Dieses Ergebnis darfst du nicht eintragen.');
-  const format=formatFor(m);let result;
-  if(format==='sets'){
-    const sets=[];for(let i=0;i<3;i++){
+  const scoring=rulesFor(m);let result;
+  if(scoring.kind==='sets'){
+    const sets=[];for(let i=0;i<scoring.bestOf;i++){
       const a=form.elements[`set-a-${i}`].value,b=form.elements[`set-b-${i}`].value;
       if(a===''&&b==='')continue;if(a===''||b==='')throw Error('Beide Werte eines Satzes eingeben.');
       sets.push({a:Number(a),b:Number(b)});
-    }result=checkScore(format,m.phase,0,0,sets);
-  }else result=checkScore(format,m.phase,Number(form.elements['score-a'].value),Number(form.elements['score-b'].value));
+    }result=checkScore(scoring,m.phase,0,0,sets);
+  }else result=checkScore(scoring,m.phase,Number(form.elements['score-a'].value),Number(form.elements['score-b'].value));
   const changed={...result,status:'done'},updated=state.matches.map(x=>x.id===id?{...x,...changed}:x);
   const ops=[{action:'update',collection:'matches',id,data:changed}];
   if(isAdmin()&&t&&canComplete(t,updated))ops.push({action:'update',collection:'tournaments',id:t.id,data:{status:'completed',phase:'completed'}});
@@ -292,10 +329,14 @@ async function resetScore(id){if(!isAdmin())throw Error('Keine Berechtigung.');c
   if(t?.status==='completed')ops.push({action:'update',collection:'tournaments',id:t.id,data:{status:'running',phase:t.mode==='groups'?'final':t.mode==='league'?'placement':t.mode}});
   await mutate(ops);closeModal();toast('Ergebnis zurückgesetzt.');
 }
-async function addFriendly(form){if(!isAdmin())throw Error('Nur Admins dürfen Spiele anlegen.');const e=form.elements;
-  const m=makeStandaloneMatch({id:key(),sideA:[e.a0.value,e.a1.value],sideB:[e.b0.value,e.b1.value],format:e.format.value,label:e.label.value,selfSchedule:e.selfSchedule.checked,selfScore:e.selfScore.checked,scheduledAt:e.scheduledAt.value,court:e.court.value.trim()});
+async function addFriendly(form){const fromPlayer=form.id==='player-friendly-form';const own=myPlayer()||(state.demo?state.players[0]:null);
+  if(fromPlayer&&!own)throw Error('Bitte anmelden und Spielerfreigabe abwarten.');
+  if(!fromPlayer&&!isAdmin())throw Error('Nur Admins dürfen den Admin-Spielplan verwalten.');
+  const e=form.elements;
+  const m=makeStandaloneMatch({id:key(),sideA:[e.a0.value,e.a1.value],sideB:[e.b0.value,e.b1.value],format:e.format.value,label:e.label.value,selfSchedule:fromPlayer?true:e.selfSchedule.checked,selfScore:fromPlayer?true:e.selfScore.checked,scheduledAt:e.scheduledAt.value,court:e.court.value.trim(),createdByUid:fromPlayer?(state.user?.uid||'demo'): '',createdByPlayerId:fromPlayer?own.id:'',source:fromPlayer?'player':'admin'});
+  if(fromPlayer){if(m.sideA[0]!==own.id)throw Error('Du musst selbst am Match teilnehmen.');m.selfSchedule=true;m.selfScore=true;}
   if(m.scheduledAt&&(!m.court||state.matches.some(x=>conflict(m,x))))throw Error('Bitte Court angeben und Terminkollisionen vermeiden.');
-  await mutate([{action:'create',collection:'matches',id:m.id,data:Object.fromEntries(Object.entries(m).filter(([k])=>k!=='id'))}]);toast('Freies Match angelegt.');form.reset();
+  await mutate([{action:'create',collection:'matches',id:m.id,data:Object.fromEntries(Object.entries(m).filter(([k])=>k!=='id'))}]);if(fromPlayer){closeModal();state.scheduleFilter='friendly';navigate('schedule');}toast('Freies Match angelegt.');if(!fromPlayer)form.reset();
 }
 async function approveClaim(id){if(!isAdmin())throw Error('Nur Admins dürfen Konten freigeben.');const c=state.claims.find(x=>x.id===id),p=player(c?.playerId);if(!p)throw Error('Passender Spieler wurde nicht gefunden.');
   if(p.authUid&&p.authUid!==id)throw Error('Dieser Spieler hat bereits ein anderes Konto. Prüfe die Zuordnung.');
@@ -355,6 +396,7 @@ document.addEventListener('click',async event=>{
     if(action==='show-table'){state.filter=id;navigate('standings');return;}
     if(action==='admin-panel'){state.adminPanel=id;render();return;}
     if(action==='create-tournament'){await createTournament();return;}
+    if(action==='new-friendly'){openPlayerFriendly();return;}
     if(action==='score'){openScore(id);return;}
     if(action==='edit-tour'){openTournamentEdit(id);return;}
     if(action==='reset-score'){await resetScore(id);return;}
@@ -374,11 +416,25 @@ document.addEventListener('input',event=>{
   if(el.name==='draft-name')state.draft.name=el.value;
   if(el.hasAttribute('data-team-name'))state.draft.teams[Number(el.dataset.teamName)].name=el.value;
   if(el.name==='draft-rounds')state.draft.rounds=Number(el.value);
+  for(const [prefix,field] of [['prelim','balls'],['prelim','gamesto'],['final','balls'],['final','gamesto']]){if(el.name===`draft-${prefix}-${field}`)state.draft[prefix==='prelim'?'scoringPrelim':'scoringFinal'][field==='gamesto'?'gamesTo':'balls']=Number(el.value);}
 });
 document.addEventListener('change',event=>{
-  const el=event.target,d=state.draft;if(!d)return;
+  const el=event.target;
+  if(/^edit-(prelim|final)-kind$/.test(el.name)){
+    const box=el.closest('.scoring-box');
+    if(box){box.querySelector('[data-scoring-kind="balls"]').hidden=el.value!=='balls';box.querySelector('[data-scoring-kind="sets"]').hidden=el.value!=='sets';}
+    return;
+  }
+  const d=state.draft;if(!d)return;
   if(el.name==='draft-mode'){d.mode=el.value;syncDraftTeams();render();}
   if(el.name==='draft-format')d.format=el.value;
+  for(const prefix of ['prelim','final']){
+    const c=d[prefix==='prelim'?'scoringPrelim':'scoringFinal'];
+    if(el.name===`draft-${prefix}-kind`){c.kind=el.value;render();return;}
+    if(el.name===`draft-${prefix}-bestof`)c.bestOf=Number(el.value);
+    if(el.name===`draft-${prefix}-balls`)c.balls=Number(el.value);
+    if(el.name===`draft-${prefix}-gamesto`)c.gamesTo=Number(el.value);
+  }
   if(el.name==='draft-random'){d.randomTeams=el.checked;render();}
   if(el.name==='draft-self')d.selfSchedule=el.checked;
   if(el.name==='draft-selfscore')d.selfScore=el.checked;
@@ -391,7 +447,7 @@ document.addEventListener('change',event=>{
   if(el.hasAttribute('data-team-player'))d.teams[Number(el.dataset.teamPlayer)].playerIds[Number(el.dataset.slot)]=el.value;
 });
 document.addEventListener('submit',async event=>{
-  const form=event.target;if(!['player-add-form','player-edit-form','tournament-edit-form','score-form','schedule-match-form','auto-form','auth-form','player-auth-form','friendly-form'].includes(form.id))return;event.preventDefault();
+  const form=event.target;if(!['player-add-form','player-edit-form','tournament-edit-form','score-form','schedule-match-form','auto-form','auth-form','player-auth-form','friendly-form','player-friendly-form'].includes(form.id))return;event.preventDefault();
   const pressed=event.submitter;
   try{
     if(form.id==='player-add-form'){await addPlayer(form.elements.playername.value);form.reset();}
@@ -400,7 +456,7 @@ document.addEventListener('submit',async event=>{
     if(form.id==='score-form')await saveScore(form);
     if(form.id==='schedule-match-form')await saveSchedule(form);
     if(form.id==='auto-form')await autoSchedule(form);
-    if(form.id==='friendly-form')await addFriendly(form);
+    if(form.id==='friendly-form'||form.id==='player-friendly-form')await addFriendly(form);
     if(form.id==='player-auth-form'){
       const id=form.elements.playerId.value,p=player(id),password=form.elements.password.value;
       if(!p)throw Error('Bitte deinen Spielernamen auswählen.');
