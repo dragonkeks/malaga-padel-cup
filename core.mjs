@@ -1,11 +1,12 @@
 /* Pure tournament rules: no database or browser dependencies. */
 export const MODES = { groups:'2 Gruppen + KO', league:'Jeder gegen jeden + Platzierung', americano:'Americano', mexicano:'Mexicano' };
-export const FORMATS = { sets:'Best of 3 Sätze', eight:'8 Bälle', twentyfour:'24 Bälle' };
+export const FORMATS = { sets:'Best of 3 Sätze', sets1:'Best of 1 Satz (bis 6 Games)', eight:'8 Bälle', twentyfour:'24 Bälle' };
 export const isTeamMode = mode => mode === 'groups' || mode === 'league';
 // A match stores its scoring config so changing the next phase cannot rewrite
 // historic results. Legacy tournaments without a scoring config still work.
 export function normalizeScoring(value='twentyfour') {
   if (typeof value === 'string') {
+    if (value === 'sets1') return {kind:'sets', balls:24, bestOf:1, gamesTo:6};
     if (value === 'sets') return {kind:'sets', balls:24, bestOf:3, gamesTo:6};
     if (value === 'eight') return {kind:'balls', balls:8, bestOf:3, gamesTo:6};
     if (value === 'twentyfour') return {kind:'balls', balls:24, bestOf:3, gamesTo:6};
